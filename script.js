@@ -7,12 +7,13 @@ let provider;
 let signer;
 let userAddress;
 
-// Replace with your SBT contract address
+// ✅ Your deployed contract address on TRUST testnet
 const contractAddress = "0x04F805Ea014c7c28101CA62d2c7f83fC480ddaba";
 
-// Minimal ABI for minting (update if your contract has different function)
+// ✅ Replace ABI with the correct one from your contract
 const contractABI = [
-  "function mint() public"
+  "function mint(address to) public"
+  // OR "function safeMint(address to, uint256 tokenId) public"
 ];
 
 connectWalletBtn.onclick = async () => {
@@ -34,7 +35,14 @@ mintBtn.onclick = async () => {
 
   try {
     statusP.innerText = "Minting SBT...";
-    const tx = await contract.mint();
+
+    // ✅ Adjust call depending on your contract function
+    // Example 1: if function mint(address)
+    const tx = await contract.mint(userAddress);
+
+    // Example 2: if function safeMint(address, uint256)
+    // const tx = await contract.safeMint(userAddress, 1);
+
     await tx.wait();
     statusP.innerText = "SBT minted successfully!";
   } catch (err) {
