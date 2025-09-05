@@ -1,21 +1,199 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mint Your SBT</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>I $TRUST MY INTUITION — SBT Mint (TRUST Testnet)</title>
+  <!-- Ethers v6 UMD (global `ethers`) -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+  <style>
+    :root{--bg:#0b0d12;--card:#12151d;--accent:#4ade80;--muted:#9aa4b2;--text:#f1f5f9}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a1f2b00 0,#10131b00 40%,#0b0d12 41%) ,var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;min-height:100svh;display:grid;place-items:center}
+    .card{width:min(720px,92vw);background:var(--card);border:1px solid #1e2533;border-radius:22px;padding:28px;box-shadow:0 8px 30px #0008}
+    h1{margin:0 0 8px;font-size:clamp(20px,4vw,30px);letter-spacing:.2px}
+    .tag{display:inline-block;margin-bottom:18px;padding:6px 10px;border-radius:999px;background:#101520;border:1px solid #1d2636;color:#b8c0cc;font-size:12px}
+    .quote{margin:16px 0 22px;font-weight:700;font-size:clamp(22px,5.2vw,40px);letter-spacing:.4px;background:linear-gradient(90deg,#e2e8f0,#a7f3d0);-webkit-background-clip:text;background-clip:text;color:transparent}
+    .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    button{appearance:none;border:0;border-radius:14px;padding:12px 16px;background:var(--accent);color:#05240f;font-weight:700;cursor:pointer;transition:.2s transform,.2s opacity;font-size:14px}
+    button.secondary{background:#1b2333;color:#dbe3f0;border:1px solid #2b3750}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+    .status{margin-top:14px;color:var(--muted);min-height:24px;white-space:pre-wrap}
+    .grid{display:grid;grid-template-columns:1fr;gap:10px}
+    .item{background:#0f1320;border:1px solid #1c2232;border-radius:14px;padding:12px}
+    .label{color:#94a3b8;font-size:12px;margin-bottom:4px}
+    .value{font-size:14px}
+    a{color:#a0e7c8;text-decoration:none}
+    a:hover{text-decoration:underline}
+  </style>
 </head>
 <body>
-  <div class="container">
-    <h1>I $TRUST MY INTUITION</h1>
-    <button id="connectWallet">Connect Wallet</button>
-    <p id="walletAddress"></p>
-    <button id="mintSBT" disabled>Mint SBT</button>
-    <p id="status"></p>
-  </div>
+  <main class="card">
+    <span class="tag">TRUST Testnet · Chain ID 13579</span>
+    <h1>Soulbound Mint</h1>
+    <div class="quote">I $TRUST MY INTUITION</div>
 
-  <script src="script.js"></script>
+    <div class="row" style="margin-bottom:12px">
+      <button id="connectWallet">Connect Wallet</button>
+      <button id="mintSBT" class="secondary" disabled>Mint SBT</button>
+    </div>
+
+    <div class="grid">
+      <div class="item">
+        <div class="label">Connected address</div>
+        <div id="walletAddress" class="value mono">—</div>
+      </div>
+      <div class="item">
+        <div class="label">Network</div>
+        <div id="netStatus" class="value mono">Not connected</div>
+      </div>
+      <div class="item">
+        <div class="label">Contract</div>
+        <div class="value mono"><a id="contractLink" href="#" target="_blank" rel="noreferrer noopener"></a></div>
+      </div>
+    </div>
+
+    <div id="status" class="status"></div>
+  </main>
+
+  <script>
+    // ====== CONFIG ======
+    const CONTRACT_ADDRESS = "0x04F805Ea014c7c28101CA62d2c7f83fC480ddaba"; // your deployed SBT
+
+    // TRUST testnet (from your details)
+    const TRUST_CHAIN_ID_HEX = "0x350B"; // 13579 decimal
+    const TRUST_PARAMS = {
+      chainId: TRUST_CHAIN_ID_HEX,
+      chainName: "TRUST Testnet",
+      nativeCurrency: { name: "TRUST", symbol: "TST", decimals: 18 },
+      rpcUrls: ["https://testnet.rpc.intuition.systems/http"],
+      blockExplorerUrls: ["https://testnet.hub.intuition.systems/"],
+    };
+
+    // Include several common mint signatures so this works even if your mint signature differs.
+    const CONTRACT_ABI = [
+      // Common mint variants
+      "function mint()",
+      "function mint(address to)",
+      "function safeMint(address to)",
+      "function safeMint(address to, uint256 tokenId)",
+      // Helpful views if your SBT is ERC721/Enumerable
+      "function balanceOf(address owner) view returns (uint256)",
+      "function totalSupply() view returns (uint256)"
+    ];
+
+    // ====== UI HOOKS ======
+    const $ = (s) => document.querySelector(s);
+    const connectBtn = $("#connectWallet");
+    const mintBtn    = $("#mintSBT");
+    const addrEl     = $("#walletAddress");
+    const netEl      = $("#netStatus");
+    const statusEl   = $("#status");
+    const contractLink = $("#contractLink");
+
+    contractLink.textContent = CONTRACT_ADDRESS;
+    contractLink.href = `https://testnet.hub.intuition.systems/address/${CONTRACT_ADDRESS}`;
+
+    let provider, signer, userAddress, contract;
+
+    function setStatus(msg){ statusEl.textContent = msg || ""; }
+
+    async function ensureTrustNetwork(){
+      const { ethereum } = window;
+      if (!ethereum) throw new Error("MetaMask not found. Install https://metamask.io and refresh.");
+      const current = await ethereum.request({ method: "eth_chainId" });
+      if (current === TRUST_CHAIN_ID_HEX) return true;
+      try {
+        await ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: TRUST_CHAIN_ID_HEX }] });
+        return true;
+      } catch (e) {
+        if (e && e.code === 4902) {
+          await ethereum.request({ method: "wallet_addEthereumChain", params: [TRUST_PARAMS] });
+          return true;
+        }
+        throw e;
+      }
+    }
+
+    async function connect(){
+      try {
+        setStatus("Connecting wallet…");
+        if (!window.ethereum) throw new Error("MetaMask not found. Install https://metamask.io");
+
+        await ensureTrustNetwork();
+
+        provider = new ethers.BrowserProvider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = await provider.getSigner();
+        userAddress = await signer.getAddress();
+
+        const chainId = await window.ethereum.request({ method: "eth_chainId" });
+        addrEl.textContent = userAddress;
+        netEl.textContent = chainId + " (expecting 0x350B)";
+
+        contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+        mintBtn.disabled = false;
+        setStatus("Connected. Ready to mint.");
+      } catch (err) {
+        console.error(err);
+        setStatus("Connect failed: " + (err?.message || err));
+        mintBtn.disabled = true;
+      }
+    }
+
+    async function pickMintMethod(){
+      // Try common signatures with a staticCall to see what succeeds without sending a tx
+      const tokenId = BigInt(Date.now()); // fallback ID if required (deterministic per ms)
+      const candidates = [
+        { fn: "mint",     args: [] },
+        { fn: "mint",     args: [userAddress] },
+        { fn: "safeMint", args: [userAddress] },
+        { fn: "safeMint", args: [userAddress, tokenId] },
+      ];
+      for (const c of candidates){
+        try {
+          if (typeof contract[c.fn]?.staticCall === "function"){
+            await contract[c.fn].staticCall(...c.args);
+            return c; // this signature worked
+          }
+        } catch (_) {
+          // try next
+        }
+      }
+      throw new Error("Could not find a working mint function. Please update ABI to match your contract.");
+    }
+
+    async function mint(){
+      if (!signer) return setStatus("Please connect your wallet first.");
+      setStatus("Preparing mint…");
+
+      try {
+        // Optional: check if already owns (if ERC721)
+        try {
+          const bal = await contract.balanceOf(userAddress);
+          if (bal && (typeof bal === "bigint" ? bal > 0n : Number(bal) > 0)){
+            setStatus("You already minted this SBT (balance > 0). If this is wrong, the contract may not be ERC721-compatible.");
+            return;
+          }
+        } catch { /* balanceOf not present or throws — ignore */ }
+
+        const chosen = await pickMintMethod();
+        setStatus(`Minting via ${chosen.fn}(${chosen.args.map(a=>typeof a==="bigint"? a.toString() : a).join(", ")})… MetaMask should open.`);
+
+        const tx = await contract[chosen.fn](...chosen.args);
+        setStatus("Tx sent: " + tx.hash + "\nWaiting for confirmations…");
+        const rec = await tx.wait();
+        setStatus("✅ Minted in block " + rec.blockNumber + ".");
+      } catch (err) {
+        console.error(err);
+        const msg = (err && (err.info?.error?.message || err.shortMessage || err.message)) || String(err);
+        setStatus("❌ Mint failed: " + msg);
+      }
+    }
+
+    connectBtn.addEventListener("click", connect);
+    mintBtn.addEventListener("click", mint);
+  </script>
 </body>
 </html>
